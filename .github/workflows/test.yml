@@ -1,0 +1,35 @@
+# Builds the package and the app and runs the package's tests, on every pull request and on main.
+# It uses no secrets, so it is safe to run on a pull request from a fork.
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The hosted image with Xcode 27. It is a preview image: check the label when it becomes general.
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Choose Xcode
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app
+
+      - name: Build and test the package
+        working-directory: Packages/CueCanKit
+        run: swift build && swift test
+
+      - name: Build the app, signed ad hoc
+        run: |
+          xcodebuild -project CueCan.xcodeproj -scheme CueCan -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build

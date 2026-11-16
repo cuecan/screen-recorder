@@ -1,0 +1,14 @@
+.DS_Store
+xcuserdata/
+DerivedData/
+build/
+.build/
+Packages/*/.swiftpm/
+*.xcresult
+*.profraw
+
+# Python bytecode from the bake-off scripts
+__pycache__/
+
+# Private notes, never published
+CLAUDE.local.md

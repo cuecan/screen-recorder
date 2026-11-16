@@ -1,0 +1,125 @@
+# Builds, signs and notarizes the DMG people download, from the tagged commit, and attaches it to a draft
+# GitHub release with the update feed, a checksum and a build attestation. A maintainer reads the draft
+# and publishes it; until then nothing reaches anyone.
+#
+# It runs scripts/release.sh, the same script a maintainer can run on a Mac.
+#
+# The secrets live in the `release` environment, so only this job can read them. Give that environment a
+# required reviewer, and limit it to tags, in the repository's settings:
+#   DEVELOPER_ID_P12           the Developer ID Application certificate and its key, as base64 of a .p12
+#   DEVELOPER_ID_P12_PASSWORD  that file's password
+#   NOTARY_KEY_P8              an App Store Connect API key, as base64 of the .p8 file
+#   NOTARY_KEY_ID              the key's id
+#   NOTARY_ISSUER              the key's issuer id
+#   SPARKLE_PRIVATE_KEY        the update signing key, as `generate_keys -x` exports it
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # The hosted image with Xcode 27. It is a preview image: check the label when it becomes general.
+    runs-on: xcode-27
+    environment: release
+    timeout-minutes: 60
+    permissions:
+      contents: write       # to create the draft release
+      id-token: write       # to sign the attestation
+      attestations: write   # to store it
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build number is the number of commits, so the whole history is needed.
+          fetch-depth: 0
+
+      - name: Choose Xcode
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app
+
+      - name: Check the tag against the app's version
+        run: |
+          version="$(grep -m1 '"MARKETING_VERSION"' CueCan.xcodeproj/project.xcproj | sed -E 's/.*: *"([^"]+)".*/\1/')"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME, but the app's version is $version." >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Take the release notes from the changelog
+        run: |
+          # The lines under "## [<version>]" in CHANGELOG.md, up to the next version's heading.
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/changes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/changes.md"; then
+            echo "CHANGELOG.md has no section for $VERSION." >&2
+            exit 1
+          fi
+
+      - name: Import the signing certificate
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password="$(uuidgen)"
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$DEVELOPER_ID_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" > /dev/null
+          security list-keychain -d user -s "$keychain"
+          rm "$RUNNER_TEMP/certificate.p12"
+
+      - name: Build, sign, notarize and write the feed
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/
+        run: |
+          printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          NOTARY_KEY="$RUNNER_TEMP/notary.p8" scripts/release.sh
+
+      - name: Attest the DMG
+        uses: actions/attest@v4
+        with:
+          subject-path: build/release/CueCan-${{ env.VERSION }}.dmg
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dmg="build/release/CueCan-$VERSION.dmg"
+          {
+            cat "$RUNNER_TEMP/changes.md"
+            echo
+            echo "SHA-256: \`$(cut -d' ' -f1 "$dmg.sha256")\`"
+            echo
+            echo "Built from this tag by GitHub Actions. To check a download against that:"
+            echo
+            echo '```sh'
+            echo "gh attestation verify CueCan-$VERSION.dmg -R $GITHUB_REPOSITORY"
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "CueCan $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "$dmg" "$dmg.sha256" build/release/appcast.xml
+
+      - name: Remove the keys from the runner
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/certificate.p12"
+          security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true

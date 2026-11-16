@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>CueCan records the area of your screen you choose, as its own track.</string>
+	<!-- Updates (docs/decisions.md, 91 and 97). The feed's address can never change: every installed
+	     copy asks it. The key is the public half of the update signing key in the release Mac's keychain.
+	     SUEnableAutomaticChecks is on, so Sparkle checks without asking first. -->
+	<key>SUFeedURL</key>
+	<string>https://cuecan.com/mac/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>j0WgvRHrc9Rg220IUkou6qxMCFX65BuDsMqbg/IReJ0=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<!-- The day a release build was made, which sets when the beta stops recording (docs/decisions.md, 98).
+	     scripts/release.sh passes it; a build from Xcode leaves it empty and never ends. -->
+	<key>CueCanBuiltOn</key>
+	<string>$(CUECAN_BUILT_ON)</string>
+</dict>
+</plist>
