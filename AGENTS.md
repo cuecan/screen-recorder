@@ -26,6 +26,10 @@ Xcode 27 and Swift 6.4, on an Apple silicon Mac.
 # The package: most work happens here
 cd Packages/CueCanKit && swift build && swift test
 
+# The same tests, stopped with a report if they stall; `quick` runs only what a pull request runs
+scripts/test-package.sh
+scripts/test-package.sh quick
+
 # The app, signed ad hoc, which needs no signing team: enough to check that it compiles
 xcodebuild -project CueCan.xcodeproj -scheme CueCan -destination 'platform=macOS' \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build

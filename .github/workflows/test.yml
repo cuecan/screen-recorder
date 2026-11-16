@@ -1,4 +1,6 @@
-# Builds the package and the app and runs the package's tests, on every pull request and on main.
+# Builds the package and the app and runs the package's quick tests, on every pull request and on main.
+# The full suite writes and reads real video, so it is run on a Mac before merging; it can be tried here
+# by running this workflow by hand with the suite set to full.
 # It uses no secrets, so it is safe to run on a pull request from a fork.
 name: Test
 
@@ -6,6 +8,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Which tests to run
+        type: choice
+        options: [quick, full]
+        default: quick
 
 permissions:
   contents: read
@@ -34,10 +43,9 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-xcode-27.2-${{ hashFiles('Packages/CueCanKit/Package.resolved') }}-
 
-      # `swift test` builds every target first, so a separate `swift build` would only compile twice.
+      # The script stops tests that stall and prints where they are stuck.
       - name: Build and test the package
-        working-directory: Packages/CueCanKit
-        run: swift test
+        run: scripts/test-package.sh "${{ inputs.suite || 'quick' }}"
 
       - name: Build the app, signed ad hoc
         run: |
