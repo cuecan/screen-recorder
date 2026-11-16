@@ -1,14 +1,35 @@
-<!-- A hero screenshot or a 10-second clip of the editor goes here. None is in the repo yet. -->
+<p align="center">
+  <img src="docs/images/icon.png" width="128" height="128" alt="The CueCan icon">
+</p>
 
-# CueCan for Mac
+<h1 align="center">CueCan for Mac</h1>
 
-**Record your screen and camera. Edit. Export.**
+<p align="center">
+  A free screen recorder and editor for macOS.<br>
+  Record your screen and camera. Edit. Export. Everything runs on your Mac.
+</p>
 
-A free screen recorder and editor for macOS. Everything runs on your Mac.
+<p align="center">
+  <a href="https://cuecan.com"><b>Download</b></a>
+  ·
+  <a href="https://cuecan.com">Website</a>
+  ·
+  <a href="https://github.com/cuecan/screen-recorder/releases">Releases</a>
+  ·
+  <a href="https://cuecan.com/mac/privacy">Privacy</a>
+</p>
 
-**[Download at cuecan.com →](https://cuecan.com)**
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
+  <img src="https://img.shields.io/badge/macOS-26%2B-black" alt="macOS 26 or later">
+  <img src="https://img.shields.io/badge/Apple%20silicon-required-black" alt="Apple silicon required">
+</p>
 
-Every download is built from a tag in this repository by GitHub Actions, and is on the [Releases](../../releases) page with its checksum.
+<p align="center">
+  <img src="docs/images/editor.jpg" width="900" alt="The CueCan editor: a take with the screen and a camera card, its transcript, and the timeline">
+</p>
+
+Every download is built from a tag in this repository by GitHub Actions, and is on the [Releases](https://github.com/cuecan/screen-recorder/releases) page with its checksum.
 
 ---
 
@@ -20,6 +41,18 @@ Every download is built from a tag in this repository by GitHub Actions, and is 
 - **Transcribes on your Mac** and times every word.
 - **Edits by transcript or timeline:** cut words, tighten pauses, trim, blade, speed up, hold a frame.
 - **Exports** MP4, captions as SRT, and a timeline for Final Cut or Resolve.
+
+<table>
+  <tr>
+    <td valign="top" width="33%"><img src="docs/images/layout.jpg" alt="The Video inspector: a clip's layout and its camera card"><br><sub>Lay out each clip: side by side, a card, the camera or the screen.</sub></td>
+    <td valign="top" width="33%"><img src="docs/images/transcript.jpg" alt="The transcript, with cut words struck through and silences marked"><br><sub>Read the take as text. Cut words and pauses where you see them.</sub></td>
+    <td valign="top" width="33%"><img src="docs/images/audio.jpg" alt="The Audio inspector: Cleanup and Voice, each with an amount"><br><sub>Clean up the microphone and choose how much.</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/timeline.jpg" alt="The timeline: clips over the voice's waveform, with the words under it">
+</p>
 
 ## And one thing more
 
@@ -49,7 +82,8 @@ This is a beta. Each build records for 90 days, then asks you to update; what yo
 ## Build it yourself
 
 ```sh
-git clone <this repository>
+git clone https://github.com/cuecan/screen-recorder.git
+cd screen-recorder
 open CueCan.xcodeproj        # Xcode 27; set your own signing team, then Run
 ```
 
@@ -68,10 +102,8 @@ Working with a coding agent? `AGENTS.md` and the skills in `.agents/skills/` tel
 Each release is built, signed and notarized by [a workflow in this repository](.github/workflows/release.yml), from the tagged commit. To check that a DMG is the one that workflow made:
 
 ```sh
-gh attestation verify CueCan-<version>.dmg -R <owner>/<repository>
+gh attestation verify CueCan-<version>.dmg -R cuecan/screen-recorder
 ```
-
-<!-- Fill in <owner>/<repository> above, and in the clone command, once the repository exists. -->
 
 ## License
 
