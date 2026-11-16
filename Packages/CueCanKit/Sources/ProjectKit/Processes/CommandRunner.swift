@@ -30,8 +30,8 @@ public enum CommandRunner {
             let errors = Pipe()
             process.standardOutput = output
             process.standardError = errors
-            let stdout = Task.detached { drain(output.fileHandleForReading, line: onStandardOutput) }
-            let stderr = Task.detached { drain(errors.fileHandleForReading, line: onStandardError) }
+            let stdout = Drain(output.fileHandleForReading, line: onStandardOutput)
+            let stderr = Drain(errors.fileHandleForReading, line: onStandardError)
             let result: Result<Int32, Error> = await withCheckedContinuation { continuation in
                 process.terminationHandler = { process in
                     lifecycle.finish()
@@ -69,6 +69,42 @@ public enum CommandRunner {
         }
         if !pending.isEmpty { line(String(decoding: pending, as: UTF8.self)) }
         return String(decoding: all, as: UTF8.self)
+    }
+
+    /// Reads a pipe to its end on a thread of its own. A read blocks until the child writes or exits, and
+    /// Swift's tasks share only as many threads as the Mac has cores: on a Mac with few cores, a few reads
+    /// waiting there left no thread to launch the children they were waiting for.
+    private final class Drain: Sendable {
+        private struct State {
+            var text: String?
+            var waiter: CheckedContinuation<String, Never>?
+        }
+        private let state = Mutex(State())
+
+        init(_ handle: FileHandle, line: @escaping @Sendable (String) -> Void) {
+            Thread.detachNewThread { [self] in
+                let text = CommandRunner.drain(handle, line: line)
+                let waiter = state.withLock { state in
+                    state.text = text
+                    defer { state.waiter = nil }
+                    return state.waiter
+                }
+                waiter?.resume(returning: text)
+            }
+        }
+
+        var value: String {
+            get async {
+                await withCheckedContinuation { continuation in
+                    let ready = state.withLock { state -> String? in
+                        if let text = state.text { return text }
+                        state.waiter = continuation
+                        return nil
+                    }
+                    if let ready { continuation.resume(returning: ready) }
+                }
+            }
+        }
     }
 
     /// Serializes cancellation with launch and exit, including cancellation before the child exists.

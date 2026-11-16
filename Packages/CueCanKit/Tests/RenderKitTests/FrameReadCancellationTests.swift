@@ -12,15 +12,23 @@ struct FrameReadCancellationTests {
             entered.continuation.yield()
             release.wait()
         }, cancel: { calls.cancelled() })
-        let preparation = Task.detached { try cancellation.start() }
+        // The blocked preparation runs on its own thread: waiting on a semaphore inside a task would hold one
+        // of the few threads Swift's tasks share, and on a machine with few cores the whole test run stalls.
+        let outcome = AsyncStream<Result<Void, Error>>.makeStream()
+        Thread.detachNewThread {
+            outcome.continuation.yield(Result { try cancellation.start() })
+            outcome.continuation.finish()
+        }
         defer { release.signal(); entered.continuation.finish() }
         for await _ in entered.stream { break }
         cancellation.cancel()
         #expect(cancellation.isCancelled)
         #expect(calls.cancellations == 0, "Native teardown must not overlap reader preparation.")
         release.signal()
+        var result: Result<Void, Error>?
+        for await finished in outcome.stream { result = finished }
         do {
-            try await preparation.value
+            try result?.get()
             Issue.record("Cancelled preparation must not proceed to extraction.")
         } catch is CancellationError {
         }

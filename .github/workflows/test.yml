@@ -18,16 +18,26 @@ jobs:
   test:
     # The hosted image with Xcode 27. It is a preview image: check the label when it becomes general.
     runs-on: xcode-27
-    timeout-minutes: 45
+    # A healthy run takes a fraction of this, so a stalled test is stopped early.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - name: Choose Xcode
         run: sudo xcode-select -s /Applications/Xcode_27.2.app
 
+      # The packages CueCanKit depends on, and what was built from them, so a run compiles only what changed.
+      - uses: actions/cache@v4
+        with:
+          path: Packages/CueCanKit/.build
+          key: spm-${{ runner.os }}-xcode-27.2-${{ hashFiles('Packages/CueCanKit/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            spm-${{ runner.os }}-xcode-27.2-${{ hashFiles('Packages/CueCanKit/Package.resolved') }}-
+
+      # `swift test` builds every target first, so a separate `swift build` would only compile twice.
       - name: Build and test the package
         working-directory: Packages/CueCanKit
-        run: swift build && swift test
+        run: swift test
 
       - name: Build the app, signed ad hoc
         run: |
