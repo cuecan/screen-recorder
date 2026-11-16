@@ -1,4 +1,4 @@
-# Builds the package and the app and runs the package's quick tests, on every pull request and on main.
+# Runs the package's quick tests and builds the app, on every pull request and on main.
 # The full suite writes and reads real video, so it is run on a Mac before merging; it can be tried here
 # by running this workflow by hand with the suite set to full.
 # It uses no secrets, so it is safe to run on a pull request from a fork.
@@ -23,31 +23,54 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
+# The two jobs run side by side: Xcode keeps its own build folder and can't reuse what `swift test` built,
+# so running one after the other would only make a pull request wait for both.
 jobs:
-  test:
+  package:
+    name: Package tests
     # The hosted image with Xcode 27. It is a preview image: check the label when it becomes general.
     runs-on: xcode-27
     # A healthy run takes a fraction of this, so a stalled test is stopped early.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Choose Xcode
         run: sudo xcode-select -s /Applications/Xcode_27.2.app
 
-      # The packages CueCanKit depends on, and what was built from them, so a run compiles only what changed.
-      - uses: actions/cache@v4
+      # The packages CueCanKit depends on, and what was built from them. It is close to a gigabyte, so it is
+      # saved once for each set of dependencies and not after every run: CueCan's own code compiles fresh.
+      - uses: actions/cache@v5
         with:
           path: Packages/CueCanKit/.build
-          key: spm-${{ runner.os }}-xcode-27.2-${{ hashFiles('Packages/CueCanKit/Package.resolved') }}-${{ github.sha }}
-          restore-keys: |
-            spm-${{ runner.os }}-xcode-27.2-${{ hashFiles('Packages/CueCanKit/Package.resolved') }}-
+          key: spm-${{ runner.os }}-xcode-27.2-${{ hashFiles('Packages/CueCanKit/Package.resolved') }}
 
       # The script stops tests that stall and prints where they are stuck.
       - name: Build and test the package
         run: scripts/test-package.sh "${{ inputs.suite || 'quick' }}"
 
-      - name: Build the app, signed ad hoc
+  app:
+    name: App build
+    # The app's own code, the views and the app wiring, is compiled only here: the package's tests never
+    # build it.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Choose Xcode
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app
+
+      # Xcode's build folder: the fetched packages and what was built from them, saved once for each set of
+      # dependencies.
+      - uses: actions/cache@v5
+        with:
+          path: build/DerivedData
+          key: xcode-${{ runner.os }}-xcode-27.2-${{ hashFiles('CueCan.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+      # Signed ad hoc only because Xcode won't build the app unsigned; it needs no certificate.
+      - name: Build the app
         run: |
           xcodebuild -project CueCan.xcodeproj -scheme CueCan -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= build
