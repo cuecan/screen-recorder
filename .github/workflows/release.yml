@@ -36,7 +36,7 @@ jobs:
       id-token: write       # to sign the attestation
       attestations: write   # to store it
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # The build number is the number of commits, so the whole history is needed.
           fetch-depth: 0
@@ -93,7 +93,10 @@ jobs:
           printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
           NOTARY_KEY="$RUNNER_TEMP/notary.p8" scripts/release.sh
 
+      # GitHub only stores attestations for a public repository, so a release cut while this one is private
+      # goes without, and its notes leave out the command that checks one.
       - name: Attest the DMG
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest@v4
         with:
           subject-path: build/release/CueCan-${{ env.VERSION }}.dmg
@@ -101,6 +104,7 @@ jobs:
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
+          ATTESTED: ${{ !github.event.repository.private }}
         run: |
           dmg="build/release/CueCan-$VERSION.dmg"
           {
@@ -108,11 +112,15 @@ jobs:
             echo
             echo "SHA-256: \`$(cut -d' ' -f1 "$dmg.sha256")\`"
             echo
-            echo "Built from this tag by GitHub Actions. To check a download against that:"
-            echo
-            echo '```sh'
-            echo "gh attestation verify CueCan-$VERSION.dmg -R $GITHUB_REPOSITORY"
-            echo '```'
+            if [ "$ATTESTED" = true ]; then
+              echo "Built from this tag by GitHub Actions. To check a download against that:"
+              echo
+              echo '```sh'
+              echo "gh attestation verify CueCan-$VERSION.dmg -R $GITHUB_REPOSITORY"
+              echo '```'
+            else
+              echo "Built from this tag by GitHub Actions."
+            fi
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "CueCan $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
