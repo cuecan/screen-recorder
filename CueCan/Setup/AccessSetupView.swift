@@ -298,6 +298,9 @@ private struct SetupWindowReporter: NSViewRepresentable {
             guard let window else { return }
             app.accessSetup.window = window
             app.dock.setupWindowAppeared(window)
+            // A turn later, once the window is shown and the Dock icon's change has taken hold: asking to
+            // become active in the same turn as that change is ignored.
+            Task { [app] in app.accessSetup.bringForward() }
             // ⌘W presses this button too.
             let close = window.standardWindowButton(.closeButton)
             close?.target = self

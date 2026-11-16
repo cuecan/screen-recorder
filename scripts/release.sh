@@ -22,8 +22,10 @@
 # workflow attaches them to a GitHub release, and https://cuecan.com/mac/appcast.xml sends the app to the
 # latest release's feed. DOWNLOAD_URL_PREFIX is where the DMG will be downloaded from.
 #
-# The build number is the number of commits, so it goes up with every release: Sparkle compares it
-# (CFBundleVersion) to decide what's newer. BUILD overrides it.
+# The build number goes up with every release: Sparkle compares it (CFBundleVersion) to decide what's newer.
+# It is the number of commits plus BUILD_BASE. The base is there because the history was started again after
+# builds had shipped with numbers up to 48, and a count that began again below them would never be offered
+# as an update. BUILD overrides the whole number.
 set -eu
 
 IDENTITY="${IDENTITY:-Developer ID Application: Jelled Media, LLC (YQ8JJV3BCS)}"
@@ -36,7 +38,8 @@ SKIP_NOTARIZE=0
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="${OUT:-$root/build/release}"
-BUILD="${BUILD:-$(git -C "$root" rev-list --count HEAD)}"
+BUILD_BASE=100
+BUILD="${BUILD:-$((BUILD_BASE + $(git -C "$root" rev-list --count HEAD)))}"
 # The day the build is made, in UTC. The beta stops starting recordings 90 days after it
 # (docs/decisions.md, 98), so a release has to follow within that time.
 BUILT_ON="${BUILT_ON:-$(date -u +%Y-%m-%d)}"

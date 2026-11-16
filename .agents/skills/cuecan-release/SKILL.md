@@ -45,7 +45,7 @@ Everything lands in `build/release`, with the DMG's SHA-256. **The script upload
 
 ## Build numbers
 
-The build number is the number of commits, and Sparkle offers an update only when it's higher than the installed one. The workflow checks out the whole history for that reason. If the history is rewritten, or releases move to another repository, the count restarts: pass `BUILD` with a number above the last release.
+The build number is the number of commits plus `BUILD_BASE` in `scripts/release.sh`, and Sparkle offers an update only when it's higher than the installed one. The workflow checks out the whole history for that reason. The base exists because the history was started again after builds up to 48 had shipped. If the history is rewritten again, or releases move to another repository, the count restarts: raise `BUILD_BASE` above the last release's number.
 
 ## What can never change
 

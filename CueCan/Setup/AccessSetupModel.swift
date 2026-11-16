@@ -60,6 +60,14 @@ final class AccessSetupModel {
         }
     }
 
+    /// Puts the window in front of every app's windows. CueCan starts as a menu bar app, which macOS doesn't
+    /// make active at launch, so a window that is only shown opens behind whatever was in front.
+    func bringForward() {
+        window?.orderFrontRegardless()
+        NSApp.activate()
+        window?.makeKey()
+    }
+
     /// Reads what macOS reports now.
     func refresh() {
         for kind in AccessKind.allCases {

@@ -59,9 +59,16 @@ public enum CommandRunner {
         defer { try? handle.close() }
         var all = Data()
         var pending = Data()
-        while let chunk = try? handle.read(upToCount: 4096), !chunk.isEmpty {
-            all.append(chunk)
-            pending.append(chunk)
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            // The system's own read, which returns whatever the child has written so far. FileHandle's waits
+            // until it has the whole count or the pipe closes, which held every short line back to the end.
+            let count = read(handle.fileDescriptor, &buffer, buffer.count)
+            if count < 0, errno == EINTR { continue }
+            guard count > 0 else { break }
+            let chunk = buffer[..<count]
+            all.append(contentsOf: chunk)
+            pending.append(contentsOf: chunk)
             while let newline = pending.firstIndex(of: 10) {
                 line(String(decoding: pending[..<newline], as: UTF8.self))
                 pending.removeSubrange(...newline)

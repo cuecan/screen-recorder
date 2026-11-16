@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # The build number is the number of commits, so the whole history is needed.
+          # The build number counts the commits, so the whole history is needed.
           fetch-depth: 0
 
       - name: Choose Xcode
