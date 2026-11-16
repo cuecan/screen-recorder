@@ -53,12 +53,15 @@ rm -rf "$out"
 mkdir -p "$out"
 
 say "Archiving the Release build"
+# ARCHS is given here as well as in the project, because the project's setting doesn't reach the packages:
+# without it they are also built for Intel, which CueCan doesn't support and TranscribeKit can't compile for.
 # Manual signing with the Developer ID identity: automatic signing would pick the development certificate.
 # The timestamp is Apple's secure one, which notarization requires.
 xcodebuild -project "$root/CueCan.xcodeproj" -scheme CueCan -configuration Release \
     -destination 'generic/platform=macOS' -archivePath "$archive" \
     -clonedSourcePackagesDirPath "$source_packages" archive \
     CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
+    ARCHS=arm64 \
     CURRENT_PROJECT_VERSION="$BUILD" \
     CUECAN_BUILT_ON="$BUILT_ON" \
     OTHER_CODE_SIGN_FLAGS="--timestamp" > "$out/archive.log" 2>&1 || {
