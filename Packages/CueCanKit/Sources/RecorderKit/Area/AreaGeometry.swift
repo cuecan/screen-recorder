@@ -27,6 +27,17 @@ public enum AreaGeometry {
         clamped(CGRect(x: display.midX - width / 2, y: display.midY - height / 2, width: width, height: height), to: display)
     }
 
+    /// Whether an area reaches past the desktop, over the menu bar or the Dock.
+    public static func reaches(_ area: CGRect, past desktop: CGRect) -> Bool {
+        !desktop.contains(area)
+    }
+
+    /// The part of the area a window can fill: windows stay on the desktop, under the menu bar.
+    public static func windowFrame(in area: CGRect, desktop: CGRect) -> CGRect {
+        let inside = area.intersection(desktop)
+        return inside.isNull ? area : inside
+    }
+
     /// The four strips of a display outside the area, for the dimming that sits outside it.
     public static func dimming(around area: CGRect, on display: CGRect) -> [CGRect] {
         let inside = area.intersection(display)

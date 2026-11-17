@@ -46,6 +46,11 @@ final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { takesKeyboard || !ignoresMouseEvents }
     override var canBecomeMain: Bool { false }
 
+    /// AppKit moves a window down until it is clear of the menu bar. The dimming covers the menu bar on
+    /// purpose, and moved down it covered the top of the capture area by the menu bar's height. Every
+    /// overlay panel is placed exactly by its owner, which keeps the ones a person uses on the desktop.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+
     override func performDrag(with event: NSEvent) {
         dragMonitor.start()
         super.performDrag(with: event)

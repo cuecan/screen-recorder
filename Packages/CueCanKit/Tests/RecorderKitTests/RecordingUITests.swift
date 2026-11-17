@@ -58,10 +58,114 @@ import ProjectKit
         #expect(pushed.maxX == laptop.maxX)
     }
 
+    /// A display with a 31 pt menu bar: the desktop stops under it.
+    private let wholeDisplay = CGRect(x: 0, y: 0, width: 2560, height: 1440)
+    private let underMenuBar = CGRect(x: 0, y: 0, width: 2560, height: 1409)
+
+    @Test func aMovedAreaStopsUnderTheMenuBarAndGoesOverItWhenPulledFurther() {
+        let area = CGRect(x: 100, y: 200, width: 1600, height: 900)
+        func top(after pull: Double) -> Double {
+            AreaSticking.moved(area, by: CGSize(width: 0, height: pull), within: underMenuBar, limit: wholeDisplay).maxY
+        }
+        // Doubles throughout: the expectation compares a Double with a CGFloat as unequal.
+        let desktopTop = Double(underMenuBar.maxY), displayTop = Double(wholeDisplay.maxY)
+        let reachesDesktopTop = desktopTop - Double(area.maxY)
+        #expect(top(after: reachesDesktopTop - 6) == desktopTop, "Close below the menu bar sticks to it.")
+        #expect(top(after: reachesDesktopTop + 8) == desktopTop, "A short pull past it stays put.")
+        #expect(top(after: reachesDesktopTop + 15) == desktopTop + 15, "A longer pull goes over the menu bar.")
+        #expect(top(after: reachesDesktopTop + 25) == displayTop, "Close to the top of the display sticks to it.")
+        #expect(top(after: 5000) == displayTop, "It never leaves the display.")
+        // Without a limit, the desktop is as far as it goes.
+        #expect(AreaSticking.moved(area, by: CGSize(width: 0, height: 5000), within: underMenuBar).maxY == underMenuBar.maxY)
+    }
+
+    @Test func aResizedAreaStopsUnderTheMenuBarAndGrowsOverItWhenPulledFurther() throws {
+        // 16:9, its bottom left corner fixed at the display's.
+        let area = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        func height(after pull: Double) -> Double {
+            AreaSticking.resized(area, corner: .topRight, translation: CGSize(width: 0, height: pull),
+                                 ratio: .sixteenByNine, within: underMenuBar, limit: wholeDisplay).height
+        }
+        let onDesktop = Double(try #require(CaptureArea.largest(.sixteenByNine, fittingWidth: 2560, height: 1409)).heightPoints)
+        // A pull straight up changes the height by a share of it, so ask for heights, not pulls.
+        let aspect = CaptureArea.Ratio.sixteenByNine.aspect
+        func pull(toHeight wanted: Double) -> Double { (wanted - area.height) * (aspect * aspect + 1) }
+        #expect(height(after: pull(toHeight: onDesktop + 6)) == onDesktop, "A short pull past the menu bar stays put.")
+        #expect(height(after: pull(toHeight: onDesktop + 16)) == onDesktop + 16)
+        #expect(height(after: pull(toHeight: 3000)) == 1440, "The whole display is the most it grows to.")
+        let kept = AreaSticking.resized(area, corner: .topRight, translation: CGSize(width: 0, height: pull(toHeight: 3000)),
+                                        ratio: .sixteenByNine, within: underMenuBar)
+        #expect(Double(kept.height) == onDesktop, "Without a limit, the desktop is as far as it grows.")
+    }
+
+    @Test func anAreaOverTheMenuBarLeavesWindowsTheDesktopPart() {
+        let onDesktop = CGRect(x: 0, y: 0, width: 2502, height: 1408)
+        #expect(!AreaGeometry.reaches(onDesktop, past: underMenuBar))
+        #expect(AreaGeometry.windowFrame(in: onDesktop, desktop: underMenuBar) == onDesktop)
+        #expect(AreaGeometry.reaches(wholeDisplay, past: underMenuBar))
+        #expect(AreaGeometry.windowFrame(in: wholeDisplay, desktop: underMenuBar) == underMenuBar)
+    }
+
+    @Test func theSizeMenuOffersTheLargestAndPartsOfIt() throws {
+        let offered = AreaChoice.offered(for: .sixteenByNine, desktop: underMenuBar, display: wholeDisplay)
+        #expect(offered == [.largestWithMenuBar, .largest, .twoThirds, .half, .third])
+        #expect(offered.map(\.title) == ["Largest with menu bar", "Largest", "Text 1.5×", "Text 2×", "Text 3×"])
+        func height(_ choice: AreaChoice) -> Int? {
+            choice.area(for: .sixteenByNine, desktop: underMenuBar, display: wholeDisplay)?.heightPoints
+        }
+        #expect(height(.largestWithMenuBar) == 1440)
+        #expect(height(.largest) == 1408)
+        // Parts of the largest area on the desktop, at even heights.
+        #expect(height(.twoThirds) == 938)
+        #expect(height(.half) == 704)
+        #expect(height(.third) == 470)
+    }
+
+    @Test func aHiddenMenuBarLeavesItsRowOut() {
+        // With the menu bar hidden the desktop reaches the top of the display, though a Dock takes the bottom.
+        let aboveDock = CGRect(x: 0, y: 70, width: 2560, height: 1370)
+        let offered = AreaChoice.offered(for: .sixteenByNine, desktop: aboveDock, display: wholeDisplay)
+        #expect(offered == [.largest, .twoThirds, .half, .third])
+    }
+
+    @Test func aPartTooSmallToDragToIsNotOffered() {
+        // A third of this desktop's largest 16:9 area is under the smallest height a corner allows.
+        let small = CGRect(x: 0, y: 0, width: 1024, height: 500)
+        #expect(AreaChoice.offered(for: .sixteenByNine, desktop: small, display: small) == [.largest, .twoThirds, .half])
+    }
+
+    @Test func aPickedSizeStaysAroundTheSameMiddleAndTheMenuBarOneGoesToTheTop() throws {
+        let current = CGRect(x: 400, y: 300, width: 1600, height: 900)
+        let half = try #require(AreaChoice.half.frame(for: .sixteenByNine, from: current, desktop: underMenuBar, display: wholeDisplay))
+        #expect(half.size == CGSize(width: 1252, height: 704))
+        #expect(half.midX == current.midX)
+        #expect(half.midY == current.midY)
+        let largest = try #require(AreaChoice.largest.frame(for: .sixteenByNine, from: current, desktop: underMenuBar, display: wholeDisplay))
+        #expect(underMenuBar.contains(largest))
+        let over = try #require(AreaChoice.largestWithMenuBar.frame(for: .sixteenByNine, from: current, desktop: underMenuBar, display: wholeDisplay))
+        #expect(over == wholeDisplay)
+        // A shape the display's width limits is the same size either way, and sits at the top with the menu bar.
+        let tall = CGRect(x: 0, y: 0, width: 1512, height: 982), tallDesktop = CGRect(x: 0, y: 0, width: 1512, height: 944)
+        let top = try #require(AreaChoice.largestWithMenuBar.frame(for: .sixteenByNine, from: tallDesktop, desktop: tallDesktop, display: tall))
+        #expect(top.size == CGSize(width: 1512, height: 850))
+        #expect(top.maxY == tall.maxY)
+    }
+
+    @Test func theMenuTicksTheSizeTheAreaIsAt() throws {
+        func ticked(_ frame: CGRect) -> AreaChoice? {
+            AreaChoice.matching(frame, ratio: .sixteenByNine, desktop: underMenuBar, display: wholeDisplay)
+        }
+        #expect(ticked(wholeDisplay) == .largestWithMenuBar)
+        #expect(ticked(CGRect(x: 28, y: 0, width: 2504, height: 1408)) == .largest)
+        #expect(ticked(CGRect(x: 100, y: 100, width: 1252, height: 704)) == .half)
+        #expect(ticked(CGRect(x: 100, y: 100, width: 1600, height: 900)) == nil, "A size dragged to in between ticks nothing.")
+        #expect(ticked(CGRect(x: 28, y: 32, width: 2504, height: 1408)) == nil, "The largest size pulled over the menu bar is neither.")
+    }
+
     @Test func theFramesLabelSaysHowBigTextWillLook() {
         let largest = CaptureArea(ratio: .nineByEight, heightPoints: 1415)
-        #expect(AreaSize.frameLabel(for: CaptureArea(ratio: .nineByEight, heightPoints: 810), largest: largest) == "Text 1.7× bigger")
-        #expect(AreaSize.frameLabel(for: CaptureArea(ratio: .nineByEight, heightPoints: 1080), largest: CaptureArea(ratio: .nineByEight, heightPoints: 1080 * 2)) == "Text 2× bigger",
+        #expect(AreaSize.frameLabel(for: CaptureArea(ratio: .nineByEight, heightPoints: 810), largest: largest) == "Text 1.7×")
+        #expect(AreaSize.frameLabel(for: CaptureArea(ratio: .nineByEight, heightPoints: 1080), largest: CaptureArea(ratio: .nineByEight, heightPoints: 1080 * 2)) == "Text 2×",
                 "Whole numbers lose their decimal.")
         #expect(AreaSize.frameLabel(for: largest, largest: largest) == nil, "At the largest size there's nothing to compare with.")
         #expect(AreaSize.frameLabel(for: CaptureArea(ratio: .nineByEight, heightPoints: 1400), largest: largest) == nil, "Under a tenth bigger rounds to the same.")

@@ -247,6 +247,22 @@ import Testing
         #expect(CaptionStyle.named("Karaoke", for: .landscape) == nil)
     }
 
+    @Test func highlightPutsABoxBehindTheWordBeingSaid() throws {
+        for output in OutputShape.allCases {
+            let style = try #require(CaptionStyle.named("highlight", for: output))
+            #expect(style.spoken.reach == .word)
+            #expect(style.spoken.box != nil)
+            #expect(style.spoken.scale == 1 && style.largestScale == 1, "Nothing grows, so the box always fits its word.")
+            let box = try #require(style.spoken.box)
+            #expect(2 * box.padding < style.lettering.wordSpacing, "The box stays clear of the words either side.")
+        }
+        var captions = Captions()
+        let chosen = captions.setStyle(named: "Highlight")
+        #expect(chosen)
+        #expect(captions.styleName == "Highlight")
+        #expect(captions[.vertical].style == .highlight(for: .vertical))
+    }
+
     @Test func changesMergeIntoTheStyle() throws {
         let style = CaptionStyle.pop(for: .landscape)
         let changed = try style.changing(with: Data(##"{"spoken": {"fill": "#00FF66", "box": {"color": "#000000", "opacity": 0.8, "padding": 0.1, "corner": 0.2}}, "words": {"atOnce": 2}, "lettering": {"shadow": null}}"##.utf8))

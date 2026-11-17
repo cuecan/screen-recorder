@@ -10,8 +10,8 @@ public struct AreaSize: Sendable, Equatable, Identifiable {
     public var id: Int { area.heightPoints }
 
     /// The label above the area's frame (docs/ui.md, R2; docs/decisions.md, 78): how big text will look,
-    /// against the largest area of this shape the display fits, where every setup starts. "Text 1.7× bigger",
-    /// or "Text 2× bigger" when whole. Nil at the largest size, or anything bigger, since there's nothing to
+    /// against the largest area of this shape the display fits, where every setup starts. "Text 1.7×",
+    /// or "Text 2×" when whole. Nil at the largest size, or anything bigger, since there's nothing to
     /// compare with.
     ///
     /// The screen fills the same slot in the video at any size, so text scales as the largest height over
@@ -20,7 +20,7 @@ public struct AreaSize: Sendable, Equatable, Identifiable {
         guard let largest, area.heightPoints > 0 else { return nil }
         let scale = (Double(largest.heightPoints) / Double(area.heightPoints) * 10).rounded() / 10
         guard scale > 1 else { return nil }
-        return "Text \(scale.formatted(.number.precision(.fractionLength(0...1))))× bigger"
+        return "Text \(scale.formatted(.number.precision(.fractionLength(0...1))))×"
     }
 
     /// The largest area that fits, followed by the preset heights. Every format can use the full

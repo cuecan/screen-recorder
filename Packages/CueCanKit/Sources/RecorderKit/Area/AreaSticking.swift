@@ -6,7 +6,8 @@ import ProjectKit
 ///
 /// A corner sticks briefly at each preset height (1080, 810 and 540 pt) and at the largest size the
 /// display fits, so the sizes that make text sharp are easy to land on. A moved area's edges stick to the
-/// display's sides, so it's easy to push it all the way to one side.
+/// desktop's sides, so it's easy to push it all the way to one side. Pulled further, the area goes over the
+/// menu bar or the Dock, to the edge of the display.
 public enum AreaSticking {
     /// How far, in points, the pointer has to travel past a sticking point before the area moves on.
     public static let distance: Double = 10
@@ -33,23 +34,32 @@ public enum AreaSticking {
     }
 
     /// A corner dragged to resize the area, with its shape locked, its opposite corner fixed, and the
-    /// height sticking at the presets and at the largest size.
+    /// height sticking at the presets, at the largest size the desktop fits, and where the dragged corner
+    /// meets the desktop's edge.
     ///
-    /// - Parameter display: The display's available desktop, which the area stays inside.
+    /// - Parameters:
+    ///   - desktop: The display's available desktop, below the menu bar and clear of the Dock. The area
+    ///     stops there, and goes on when the corner is pulled further.
+    ///   - limit: The whole display, which the area never leaves. Nil keeps it on the desktop.
     public static func resized(
         _ original: CGRect, corner: AreaGeometry.Corner, translation: CGSize,
-        ratio: CaptureArea.Ratio, within display: CGRect
+        ratio: CaptureArea.Ratio, within desktop: CGRect, limit: CGRect? = nil
     ) -> CGRect {
+        let limit = limit ?? desktop
         let anchor = CGPoint(x: corner.isLeft ? original.maxX : original.minX,
                              y: corner.isBottom ? original.maxY : original.minY)
-        let availableWidth = corner.isLeft ? anchor.x - display.minX : display.maxX - anchor.x
-        let availableHeight = corner.isBottom ? anchor.y - display.minY : display.maxY - anchor.y
-        guard let maximum = CaptureArea.largest(ratio, fittingWidth: availableWidth, height: availableHeight) else { return original }
+        // The largest area of the shape between the fixed corner and the edges of a rectangle.
+        func largest(reaching bounds: CGRect) -> CaptureArea? {
+            CaptureArea.largest(ratio, fittingWidth: corner.isLeft ? anchor.x - bounds.minX : bounds.maxX - anchor.x,
+                                height: corner.isBottom ? anchor.y - bounds.minY : bounds.maxY - anchor.y)
+        }
+        guard let maximum = largest(reaching: limit) else { return original }
         let dx = translation.width * (corner.isLeft ? -1 : 1)
         let dy = translation.height * (corner.isBottom ? -1 : 1)
         // The pointer projected onto the shape's diagonal, so either axis feels natural.
         let change = (dx * ratio.aspect + dy) / (ratio.aspect * ratio.aspect + 1)
-        let sticking = heights(for: ratio, display: display) + [maximum.heightPoints]
+        var sticking = heights(for: ratio, display: desktop) + [maximum.heightPoints]
+        if let onDesktop = largest(reaching: desktop) { sticking.append(onDesktop.heightPoints) }
         let wanted = stuck(height: original.height + change, to: sticking)
         let smallest = min(AreaGeometry.smallestHeight, maximum.heightPoints)
         let height = min(maximum.heightPoints, max(smallest, Int((wanted / 2).rounded()) * 2))
@@ -59,15 +69,26 @@ public enum AreaSticking {
                       width: Double(area.widthPoints), height: Double(height))
     }
 
-    /// The area moved by a drag, kept on the display, with each edge pulled to the display's side when it
-    /// comes within ``distance`` of it.
-    public static func moved(_ original: CGRect, by translation: CGSize, within display: CGRect) -> CGRect {
-        var frame = AreaGeometry.clamped(original.offsetBy(dx: translation.width, dy: translation.height), to: display)
-        if abs(frame.minX - display.minX) <= distance { frame.origin.x = display.minX }
-        else if abs(frame.maxX - display.maxX) <= distance { frame.origin.x = display.maxX - frame.width }
-        if abs(frame.minY - display.minY) <= distance { frame.origin.y = display.minY }
-        else if abs(frame.maxY - display.maxY) <= distance { frame.origin.y = display.maxY - frame.height }
-        return frame
+    /// The area moved by a drag, with each edge pulled to the desktop's side when it comes within
+    /// ``distance`` of it, from either direction. So it stops under the menu bar and at the Dock, and a
+    /// longer pull takes it over them, as far as the edge of the display.
+    ///
+    /// - Parameters:
+    ///   - desktop: The display's available desktop, whose sides the area sticks to.
+    ///   - limit: The whole display, which the area never leaves. Nil keeps it on the desktop.
+    public static func moved(_ original: CGRect, by translation: CGSize, within desktop: CGRect, limit: CGRect? = nil) -> CGRect {
+        let limit = limit ?? desktop
+        var frame = AreaGeometry.clamped(original.offsetBy(dx: translation.width, dy: translation.height), to: limit)
+        // The desktop's sides first: where they differ from the display's, they are where the area rests.
+        if abs(frame.minX - desktop.minX) <= distance { frame.origin.x = desktop.minX }
+        else if abs(frame.maxX - desktop.maxX) <= distance { frame.origin.x = desktop.maxX - frame.width }
+        else if abs(frame.minX - limit.minX) <= distance { frame.origin.x = limit.minX }
+        else if abs(frame.maxX - limit.maxX) <= distance { frame.origin.x = limit.maxX - frame.width }
+        if abs(frame.minY - desktop.minY) <= distance { frame.origin.y = desktop.minY }
+        else if abs(frame.maxY - desktop.maxY) <= distance { frame.origin.y = desktop.maxY - frame.height }
+        else if abs(frame.minY - limit.minY) <= distance { frame.origin.y = limit.minY }
+        else if abs(frame.maxY - limit.maxY) <= distance { frame.origin.y = limit.maxY - frame.height }
+        return AreaGeometry.clamped(frame, to: limit)
     }
 
     /// The smallest area of a shape that holds a window of at least this size, for "Use a bigger area".

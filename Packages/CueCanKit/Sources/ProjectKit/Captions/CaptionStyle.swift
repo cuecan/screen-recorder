@@ -283,9 +283,32 @@ extension CaptionStyle {
         )
     }
 
+    /// White capitals with a soft shadow and no outline, the word being said on a blue rounded box that glides
+    /// from word to word. The page fades in and nothing springs, so it reads calmer than ``pop(for:)``.
+    ///
+    /// Capitals, because the box is as tall as a capital letter plus its padding and a descender would hang
+    /// out of it. Every number is a starting value, to judge by eye (AUTHOR'S TAKE NEEDED).
+    public static func highlight(for output: OutputShape) -> CaptionStyle {
+        let short = output == .vertical
+        return CaptionStyle(
+            name: "Highlight",
+            words: Words(atOnce: short ? 3 : 4, characters: short ? 20 : 30, lines: 2, width: short ? 0.84 : 0.62,
+                         uppercase: true, keepsPunctuation: false),
+            // Wider word gaps than Pop's, so the box's padding stays clear of the words either side.
+            lettering: Lettering(font: "AvenirNext-Heavy", size: short ? 0.076 : 0.062, lineSpacing: 1.3, wordSpacing: 0.4, fill: "#FFFFFF",
+                       stroke: nil, shadow: Shadow(color: "#000000", opacity: 0.6, blur: 0.16, drop: 0.05)),
+            spoken: Spoken(reach: .word, fill: nil, box: Box(color: "#0A6CFF", opacity: 1, padding: 0.16, corner: 0.14), scale: 1),
+            entrance: Entrance(reveal: .page, motion: .fade, duration: 0.1, exit: 0.06),
+            spring: Spring(period: 0.3, damping: 0.6),
+            emphasis: Emphasis(fill: "#FFD60A", scale: 1),
+            position: .free,
+            offset: 0
+        )
+    }
+
     /// The styles that can be chosen. Adding a style is adding a value here.
     public static func catalog(for output: OutputShape) -> [CaptionStyle] {
-        [pop(for: output)]
+        [pop(for: output), highlight(for: output)]
     }
 
     /// A catalog style by name, ignoring case.

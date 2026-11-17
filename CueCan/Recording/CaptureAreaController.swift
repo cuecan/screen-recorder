@@ -104,17 +104,21 @@ final class CaptureAreaController {
 
     /// Shows the area in a shape on the chosen monitor, at the largest size that fits, centred
     /// (docs/decisions.md, 19). Windows snapped into the old area follow it.
+    ///
+    /// It fits the desktop, under the menu bar, unless the area was last left over the menu bar or the Dock
+    /// on this monitor: then it fits the whole display.
     func show(ratio: CaptureArea.Ratio) {
         refreshDisplays()
         guard let screen = NSScreen.with(id: selectedDisplayID) ?? NSScreen.underPointer, let displayID = screen.displayID else { return }
         selectedDisplayID = displayID
         let visible = screen.visibleFrame
-        guard let largest = CaptureArea.largest(ratio, fittingWidth: visible.width, height: visible.height) else {
+        let bounds = Self.reachedPastDesktop(on: screen) ? screen.frame : visible
+        guard let largest = CaptureArea.largest(ratio, fittingWidth: bounds.width, height: bounds.height) else {
             recorder.problem = "No area of this shape fits this display."
             return
         }
         let old = placement?.frame
-        let frame = AreaGeometry.centered(width: Double(largest.widthPoints), height: Double(largest.heightPoints), on: visible)
+        let frame = AreaGeometry.centered(width: Double(largest.widthPoints), height: Double(largest.heightPoints), on: bounds)
         placement = AreaPlacement(area: largest, frame: frame, displayID: displayID, displayFrame: screen.frame, visibleFrame: visible)
         isShowing = true
         stage = .setup
@@ -204,10 +208,11 @@ final class CaptureAreaController {
     func adjust(from original: CGRect, corner: AreaGeometry.Corner?, translation: CGSize) {
         guard stage == .setup, var placement else { return }
         if let corner {
-            placement.frame = AreaSticking.resized(original, corner: corner, translation: translation, ratio: placement.area.ratio, within: placement.visibleFrame)
+            placement.frame = AreaSticking.resized(original, corner: corner, translation: translation, ratio: placement.area.ratio,
+                                                   within: placement.visibleFrame, limit: placement.displayFrame)
             placement.area = CaptureArea(ratio: placement.area.ratio, heightPoints: Int(placement.frame.height))
         } else {
-            placement.frame = AreaSticking.moved(original, by: translation, within: placement.visibleFrame)
+            placement.frame = AreaSticking.moved(original, by: translation, within: placement.visibleFrame, limit: placement.displayFrame)
         }
         guard placement != self.placement else { return }
         cancelSnapping()
@@ -216,11 +221,61 @@ final class CaptureAreaController {
         layout()
     }
 
+    /// The sizes the capsule's menu offers on this display, largest first.
+    var sizeChoices: [AreaChoice] {
+        guard let placement else { return [] }
+        return AreaChoice.offered(for: placement.area.ratio, desktop: placement.visibleFrame, display: placement.displayFrame)
+    }
+
+    /// The size the area is at, for the menu's tick. Nil for one dragged to in between.
+    var sizeChoice: AreaChoice? {
+        guard let placement else { return nil }
+        return AreaChoice.matching(placement.frame, ratio: placement.area.ratio, desktop: placement.visibleFrame, display: placement.displayFrame)
+    }
+
+    /// A size picked from the capsule's menu.
+    func choose(_ choice: AreaChoice) {
+        guard stage == .setup, var placement,
+              let frame = choice.frame(for: placement.area.ratio, from: placement.frame,
+                                       desktop: placement.visibleFrame, display: placement.displayFrame),
+              frame != placement.frame else { return }
+        let old = placement.frame
+        placement.frame = frame
+        placement.area = CaptureArea(ratio: placement.area.ratio, heightPoints: Int(frame.height))
+        cancelSnapping()
+        self.placement = placement
+        notice = nil
+        rememberReach(of: placement)
+        layout()
+        followWindows(from: old)
+        recorder.preview.areaChanged()
+    }
+
     /// The drag ended: snapped windows follow the area, and the preview follows it too.
     func dragEnded(from original: CGRect) {
         guard let placement, placement.frame != original else { return }
+        rememberReach(of: placement)
         followWindows(from: original)
         recorder.preview.areaChanged()
+    }
+
+    // MARK: - Over the menu bar
+
+    /// The monitors where the area was last left over the menu bar or the Dock, by their lasting ids.
+    private static let reachKey = "areaReachesPastDesktop"
+
+    private static func reachedPastDesktop(on screen: NSScreen) -> Bool {
+        guard let id = screen.persistentID else { return false }
+        return (UserDefaults.standard.stringArray(forKey: reachKey) ?? []).contains(id)
+    }
+
+    /// Keeps whether the area is over the menu bar or the Dock, so the next setup on this monitor opens
+    /// the same way.
+    private func rememberReach(of placement: AreaPlacement) {
+        guard let id = NSScreen.with(id: placement.displayID)?.persistentID else { return }
+        var ids = Set(UserDefaults.standard.stringArray(forKey: Self.reachKey) ?? [])
+        if placement.reachesPastDesktop { ids.insert(id) } else { ids.remove(id) }
+        UserDefaults.standard.set(ids.sorted(), forKey: Self.reachKey)
     }
 
     // MARK: - Snapping windows
@@ -253,10 +308,10 @@ final class CaptureAreaController {
         Task { [weak self] in
             // The app's focused window settles a moment after it activates.
             try? await Task.sleep(for: .milliseconds(120))
-            guard let self, let frame = self.placement?.frame, self.stage != .starting, self.snappingTask == nil else { return }
+            guard let self, let frame = self.placement?.windowFrame, self.stage != .starting, self.snappingTask == nil else { return }
             let request = self.snapRequest
             let result = await self.snapper.snapFocusedWindow(of: pid, to: frame, avoiding: self.cameraObstructions)
-            guard !Task.isCancelled, self.snapRequest == request, self.placement?.frame == frame,
+            guard !Task.isCancelled, self.snapRequest == request, self.placement?.windowFrame == frame,
                   self.stage != .starting,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
             if case .placed = result,
@@ -311,7 +366,7 @@ final class CaptureAreaController {
         let request = snapRequest, avoiding = cameraObstructions
         snappingTask = Task { [weak self] in
             guard let self else { return }
-            let result = await self.snapper.snap(window, to: placement.frame, avoiding: avoiding)
+            let result = await self.snapper.snap(window, to: placement.windowFrame, avoiding: avoiding)
             guard !Task.isCancelled, self.snapRequest == request, self.placement?.frame == placement.frame else { return }
             self.snappingTask = nil
             self.showSnapResult(result, for: window)
@@ -325,7 +380,7 @@ final class CaptureAreaController {
             notice = nil
         case .placed(let fit, let frame, let kind):
             let minimum = kind == .upperLeft ? frame.size : nil
-            let bigger = minimum.flatMap { AreaSticking.smallestArea(placement.area.ratio, holding: $0, display: placement.visibleFrame) }
+            let bigger = minimum.flatMap { AreaSticking.smallestArea(placement.area.ratio, holding: $0, display: placement.bounds) }
             notice = .doesNotFit(window: window, fit: fit, placement: kind, biggerArea: bigger)
         case nil:
             notice = .cannotMove(appName: window.appName, isFullScreen: snapper.lastFailure == .fullScreen)
@@ -339,10 +394,12 @@ final class CaptureAreaController {
         let request = snapRequest, avoiding = cameraObstructions
         snappingTask = Task { [weak self] in
             guard let self else { return }
-            await self.snapper.follow(from: old, to: placement.frame, avoiding: avoiding)
+            // Windows were in the part of the old area that was on the desktop, and go to that part of the new.
+            let oldWindows = AreaGeometry.windowFrame(in: old, desktop: placement.visibleFrame)
+            await self.snapper.follow(from: oldWindows, to: placement.windowFrame, avoiding: avoiding)
             guard !Task.isCancelled, self.snapRequest == request else { return }
             if let window {
-                let result = await self.snapper.snap(window, to: placement.frame, avoiding: avoiding)
+                let result = await self.snapper.snap(window, to: placement.windowFrame, avoiding: avoiding)
                 guard !Task.isCancelled, self.snapRequest == request else { return }
                 self.showSnapResult(result, for: window)
             }
@@ -362,7 +419,7 @@ final class CaptureAreaController {
         placement.frame = AreaGeometry.clamped(
             CGRect(x: centre.x - Double(area.widthPoints) / 2, y: centre.y - Double(area.heightPoints) / 2,
                    width: Double(area.widthPoints), height: Double(area.heightPoints)),
-            to: placement.visibleFrame
+            to: placement.bounds
         )
         self.placement = placement
         self.notice = nil
@@ -477,7 +534,7 @@ final class CaptureAreaController {
         // The capsule in its middle, while setting up with nothing dragged over, and above the frame how big
         // text will look, once the area is smaller than the largest that fits (docs/decisions.md, 78).
         if settingUp, hovering == nil {
-            let largest = CaptureArea.largest(placement.area.ratio, fittingWidth: visible.width, height: visible.height)
+            let largest = CaptureArea.largest(placement.area.ratio, fittingWidth: placement.bounds.width, height: placement.bounds.height)
             if let title = AreaSize.frameLabel(for: placement.area, largest: largest) {
                 let size = label.set(AreaLabelView(title: title))
                 label.show(at: outside(size, above: area, in: visible, gap: width + 6))
@@ -497,7 +554,7 @@ final class CaptureAreaController {
             tint.orderFrontRegardless()
             let size = release.set(ReleaseToSnapView(appName: hovering.appName))
             release.show(at: centred(size, in: area))
-            let fillSize = willFill.set(WillFillView(area: area.size))
+            let fillSize = willFill.set(WillFillView(area: placement.windowFrame.size))
             willFill.show(at: outside(fillSize, below: area, in: visible, gap: width + 6))
         } else {
             tint.orderOut(nil)
@@ -527,7 +584,8 @@ final class CaptureAreaController {
     private func outside(_ size: CGSize, above area: CGRect, in visible: CGRect, gap: CGFloat) -> CGRect {
         let x = min(max(visible.minX, area.midX - size.width / 2), visible.maxX - size.width)
         let y = area.maxY + gap + size.height <= visible.maxY ? area.maxY + gap : area.maxY - gap - size.height
-        return CGRect(x: x, y: y, width: size.width, height: size.height)
+        // An area over the menu bar keeps its label on the desktop, where it can be read.
+        return CGRect(x: x, y: min(y, visible.maxY - size.height), width: size.width, height: size.height)
     }
 
     /// Just below the area, or inside its bottom edge when there's no room below it.

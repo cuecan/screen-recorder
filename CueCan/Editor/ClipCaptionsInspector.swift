@@ -1,7 +1,7 @@
 import ProjectKit
 import SwiftUI
 
-/// Caption visibility is a clip setting; its single style and timing are shared by the edit.
+/// Caption visibility is a clip setting; its style is shared by the edit.
 struct ClipCaptionsInspector: View {
     let model: EditorModel
 
@@ -15,22 +15,15 @@ struct ClipCaptionsInspector: View {
             }
             .frame(height: 22)
             if clips.contains(where: \.look.captions) {
-                InspectorRow("Style") { Text(captions.styleName) }
-                detail("Style and timing apply to the whole project.")
-                DisclosureGroup("Timing") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        InspectorRow("Show earlier") {
-                            InspectorNumberField(title: "Caption timing offset", value: captions.timing.lead * 1000,
-                                                 range: -500...500, step: 10) { value in
-                                model.setCaptions("Caption timing \(Int(value)) ms") { $0.timing.lead = value / 1000 }
-                            }
-                            .frame(width: 62, height: 22)
-                            Text("ms").foregroundStyle(.secondary)
-                        }
+                InspectorRow("Style") {
+                    Picker("Style", selection: Binding(get: { captions.styleName }, set: { name in
+                        model.setCaptions("Caption style \(name)") { $0.setStyle(named: name) }
+                    })) {
+                        ForEach(CaptionStyle.catalog(for: .landscape).map(\.name), id: \.self) { Text($0).tag($0) }
                     }
-                    .padding(.top, 6)
+                    .pickerStyle(.segmented).labelsHidden()
                 }
-                .font(.callout)
+                detail("The style applies to the whole project.")
             }
         }
     }

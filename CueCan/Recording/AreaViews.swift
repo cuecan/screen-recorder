@@ -2,24 +2,44 @@ import RecorderKit
 import RenderKit
 import SwiftUI
 
-/// The area's move handle, alone in its dark capsule in the middle of the area (docs/ui.md, R10): Start
-/// recording is at the right end of the setup element's strip, and Return still starts (docs/decisions.md,
-/// 79).
+/// The area's move handle and its size menu, in a dark capsule in the middle of the area (docs/ui.md, R10):
+/// Start recording is at the right end of the setup element's strip, and Return still starts
+/// (docs/decisions.md, 79). The menu offers the largest area, with the menu bar or without, and parts of it.
 struct AreaCapsuleView: View {
     let controller: CaptureAreaController
+    @State private var sizes = MenuAnchor()
 
     var body: some View {
-        ZStack {
-            Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-                .allowsHitTesting(false)
-            AreaMoveHandle(controller: controller)
+        HStack(spacing: 4) {
+            ZStack {
+                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .allowsHitTesting(false)
+                AreaMoveHandle(controller: controller)
+            }
+            .frame(width: 38, height: 38)
+            .background(.white.opacity(0.1), in: .circle)
+            .help("Drag to move the area")
+            .accessibilityLabel("Drag to move the area")
+
+            Button {
+                let ticked = controller.sizeChoice
+                sizes.open(controller.sizeChoices.map { choice in
+                    .item(choice.title, checked: choice == ticked) { controller.choose(choice) }
+                })
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 30, height: 38)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .background(MenuAnchorView(anchor: sizes))
+            .help("Choose a size")
+            .accessibilityLabel("Area size")
         }
-        .frame(width: 38, height: 38)
-        .background(.white.opacity(0.1), in: .circle)
-        .help("Drag to move the area")
-        .accessibilityLabel("Drag to move the area")
         .padding(5)
         .hudBackground(cornerRadius: 24)
         .fixedSize()
